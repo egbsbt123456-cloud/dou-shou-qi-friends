@@ -1,0 +1,536 @@
+<!doctype html>
+<!-- 斗兽棋棋盘：平台原创实现。视觉思路参考 elye/web_dynamic_nodejs_animal_chess_game（河流渐变、彩边陷阱、金光兽穴），未复制其代码或素材。 -->
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>斗兽棋</title><style>
+html{font-family:Inter,"Microsoft YaHei",sans-serif;font-synthesis:none}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#f8f7f2;color:#223b34;display:flex;flex-direction:column}
+button{font:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid #d29f41;outline-offset:3px}
+button[hidden],[hidden]{display:none!important}
+.play-header{min-height:58px;display:flex;gap:12px;padding:12px 20px;justify-content:space-between;align-items:center;flex-wrap:wrap;border-bottom:1px solid #e2e4dc}
+#modeLabel{font-size:13px;color:#69786d}
+.controls{display:flex;gap:8px}
+.plain-btn{border:1px solid #bcc9bd;border-radius:5px;background:#f8faf5;color:#264f40;padding:9px 12px;font-size:13px}
+.plain-btn:hover{background:#eef1e7}.plain-btn:disabled{opacity:.5;cursor:default}
+.board-wrap{padding:18px 12px 8px;display:flex;justify-content:center}
+
+/* ---- 棋盘：9 行 × 7 列 ---- */
+#board{--cell:min(calc((100vw - 40px) / 7),calc((100vh - 230px) / 9),74px);
+  display:grid;grid-template-columns:repeat(7,var(--cell));grid-template-rows:repeat(9,var(--cell));gap:3px;padding:10px;
+  background:linear-gradient(160deg,#b98d5c,#9c7244);border-radius:14px;
+  box-shadow:0 12px 22px #74542e26,0 2px 3px #74542e1c,inset 0 0 0 1px #fff6;touch-action:manipulation;user-select:none}
+.cell{position:relative;padding:0;border:0;border-radius:6px;background:radial-gradient(circle at 35% 30%,#f6e8c4,#e9d3a2);
+  display:grid;place-items:center;overflow:visible;color:inherit}
+.cell.water{background:linear-gradient(135deg,#a9d6ec,#5e9cc5);
+  background-image:repeating-linear-gradient(170deg,#ffffff00 0 9px,#ffffff2e 9px 11px),linear-gradient(135deg,#a9d6ec,#5e9cc5)}
+.cell.trap{box-shadow:inset 0 0 0 3px var(--trap)}
+.cell.trap::before{content:'';position:absolute;inset:22%;border-radius:50%;border:2px dashed var(--trap);opacity:.55}
+.trap-r{--trap:#d9826f}.trap-b{--trap:#6f9fd6}
+.cell.den{background:radial-gradient(circle,#fffbea,#f1d98d);box-shadow:inset 0 0 0 4px var(--den),0 0 14px #ffd54a99}
+.cell.den::before{content:'🏰';position:absolute;font-size:calc(var(--cell)*.48);opacity:.35;font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif}
+.cell.den::after{content:'';position:absolute;inset:-3px;border-radius:8px;border:2px solid #ffd54a;animation:shimmer 2.4s ease-in-out infinite}
+.den-r{--den:#cf6b57}.den-b{--den:#5b8fcf}
+@keyframes shimmer{0%,100%{opacity:.25}50%{opacity:.9}}
+
+/* ---- 棋子 ---- */
+.face{position:relative;z-index:2;display:grid;place-items:center;width:84%;height:84%;border-radius:50%;
+  font-size:calc(var(--cell)*.5);line-height:1;font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;transition:transform .15s}
+.face:empty{display:none}
+.piece-r .face{background:radial-gradient(circle at 35% 30%,#fff0ec,#ec9b8b);border:3px solid #b9473a;color:#8a2418;box-shadow:0 3px 0 #9a3b30,0 4px 6px #5b1d1640}
+.piece-b .face{background:radial-gradient(circle at 35% 30%,#eef6ff,#8dbbea);border:3px solid #3b6fae;color:#163e73;box-shadow:0 3px 0 #2f5a8e,0 4px 6px #12305940}
+.no-emoji .face{font-family:"KaiTi","STKaiti",serif;font-weight:700;font-size:calc(var(--cell)*.42)}
+.rank{position:absolute;z-index:3;right:5%;bottom:5%;min-width:calc(var(--cell)*.3);height:calc(var(--cell)*.3);padding:0 3px;border-radius:999px;
+  display:grid;place-items:center;font:700 calc(var(--cell)*.19)/1 Inter,sans-serif;background:#fffdf6;border:1px solid #c9b88f;color:#5b4524}
+.rank:empty{display:none}
+.movable:hover .face{transform:scale(1.08)}
+.selected .face{transform:scale(1.1);box-shadow:0 0 0 3px #ffd54a,0 0 16px #ffc800aa}
+.cell.last{outline:2px solid #bc5e48cc;outline-offset:-2px}
+.cell.target::after{content:'';position:absolute;z-index:4;width:24%;height:24%;border-radius:50%;background:#fffdf6;box-shadow:0 0 0 3px #4b8064cc}
+.cell.capture::after{content:'';position:absolute;z-index:4;inset:5%;border-radius:50%;border:3px solid #c2452f;box-shadow:0 0 10px #c2452f88}
+.cell.den.target::after,.cell.den.capture::after{animation:none}
+
+.game-status{text-align:center;margin:10px 14px 2px;color:#496047;font-size:14px;font-weight:650}
+.game-status.over{color:#926741}
+.counts{text-align:center;margin:2px;color:#808570;font-size:12px}
+details.rules{max-width:520px;margin:10px auto 22px;padding:0 16px;color:#69786d;font-size:12px;line-height:1.9}
+details.rules summary{cursor:pointer;color:#264f40;text-align:center;font-size:13px}
+
+/* ---- 结算与彩带 ---- */
+.result{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:#223b3459}
+.result>div{min-width:min(320px,86vw);padding:28px 26px;text-align:center;background:#fffefa;border:1px solid #e0e3d9;border-radius:12px;box-shadow:0 18px 40px #223b3433}
+.result h2{margin:0 0 10px;font-size:26px}.result p{margin:0 0 20px;color:#69786d}
+#confetti{position:fixed;inset:0;z-index:30;pointer-events:none;overflow:hidden;display:none}
+#confetti.show{display:block}
+#confetti i{position:absolute;top:-16px;width:9px;height:14px;border-radius:2px;background:#e98f80;animation:fall 2.6s linear forwards}
+#confetti i:nth-child(4n+1){background:#8dbbea}#confetti i:nth-child(4n+2){background:#ffd54a}#confetti i:nth-child(4n+3){background:#4b8064}
+@keyframes fall{to{transform:translateY(110vh) rotate(540deg);opacity:.2}}
+@media(prefers-reduced-motion:reduce){.cell.den::after,#confetti i{animation:none}#confetti{display:none!important}.face{transition:none}}
+@media(max-width:600px){.play-header{padding:10px 12px;gap:8px}.plain-btn{font-size:12px;padding:7px 10px}.board-wrap{padding:12px 6px 6px}#board{gap:2px;padding:6px;--cell:min(calc((100vw - 30px) / 7),calc((100vh - 200px) / 9),74px)}}
+</style></head><body>
+<header class="play-header"><span id="modeLabel">斗兽棋</span><div class="controls"><button id="newGame" class="plain-btn" type="button">重新开局</button><button id="undo" class="plain-btn" type="button">悔棋</button></div></header>
+<div class="board-wrap"><div id="board" role="group" aria-label="斗兽棋棋盘，9 行 7 列"></div></div>
+<p id="status" class="game-status" role="status">红方先行</p>
+<p id="counts" class="counts"></p>
+<details class="rules"><summary>规则说明</summary>
+ <p>兽力由大到小：象 8、狮 7、虎 6、豹 5、狼 4、狗 3、猫 2、鼠 1。每步横竖走一格，兽力大于或等于对方即可吃；鼠能吃象，象不能吃鼠。</p>
+ <p>只有鼠能下河；河里和岸上的棋子不能互吃。狮、虎可以横竖跳过整段河，河中有棋子时不能跳。</p>
+ <p>棋子走进对方陷阱后，任何对方棋子都能吃它。不能进入自己的兽穴。</p>
+ <p>走进对方兽穴、吃光对方棋子，或让对方无子可走，即获胜。</p>
+</details>
+<div id="result" class="result" hidden><div><h2 id="resultTitle"></h2><p id="resultText"></p><button id="resultClose" class="plain-btn" type="button">查看棋盘</button></div></div>
+<div id="confetti" aria-hidden="true"></div>
+<script>window.Worker=undefined;</script>
+<script>
+/* 斗兽棋规则引擎（纯逻辑，零 DOM 依赖）
+ * 浏览器：window.DSQ；Node：module.exports
+ * 本文件与 packages/game-core/src/doushouqi-engine.cjs 必须逐字一致，由测试核对。
+ *
+ * 坐标约定：board[row][col]，row 0-8，col 0-6。row 0 为红方底线（显示在下方），row 8 为蓝方底线。
+ * 河：rows 3-5 的 cols 1-2 与 4-5。兽穴：红 (0,3)，蓝 (8,3)。
+ * 陷阱：红方 (0,2)(0,4)(1,3)，蓝方 (8,2)(8,4)(7,3)。
+ * 棋子：'r1'..'r8' / 'b1'..'b8'，数字为兽力：1鼠 2猫 3狗 4狼 5豹 6虎 7狮 8象。
+ *
+ * 规则（标准斗兽棋，ruleVersion standard-1.0）：
+ *  - 每步横竖走一格，不能斜走，不能进入己方兽穴。
+ *  - 只有鼠能下河；狮、虎可横竖跳过整段河，河中有任何棋子时不能跳。
+ *  - 兽力大于等于对方可吃；鼠能吃象，象不能吃鼠。
+ *  - 河里与岸上的棋子不能互吃（河中鼠只能被河中鼠吃）。
+ *  - 落入对方陷阱的棋子兽力视为 0，任何对方棋子都能吃（含象吃陷阱中的鼠）。
+ *  - 进入对方兽穴、吃光对方棋子，或使对方无子可走，即获胜。
+ */
+(function (root) {
+  'use strict';
+
+  var RED = 'r', BLUE = 'b', ROWS = 9, COLS = 7;
+  var NAMES = { 1: '鼠', 2: '猫', 3: '狗', 4: '狼', 5: '豹', 6: '虎', 7: '狮', 8: '象' };
+  var EMOJI = { 1: '🐭', 2: '🐱', 3: '🐶', 4: '🐺', 5: '🐆', 6: '🐯', 7: '🦁', 8: '🐘' };
+  var VALUES = { 1: 500, 2: 200, 3: 250, 4: 300, 5: 450, 6: 750, 7: 850, 8: 950 };
+  var DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  var WIN = 1000000;
+
+  function sideOf(p) { return p ? p.charAt(0) : null; }
+  function rankOf(p) { return p ? Number(p.charAt(1)) : 0; }
+  function opp(side) { return side === RED ? BLUE : RED; }
+  function onBoard(r, c) {
+    return Number.isInteger(r) && Number.isInteger(c) && r >= 0 && r < ROWS && c >= 0 && c < COLS;
+  }
+  function isWater(r, c) { return r >= 3 && r <= 5 && (c === 1 || c === 2 || c === 4 || c === 5); }
+  function denOwner(r, c) { return c === 3 && r === 0 ? RED : (c === 3 && r === 8 ? BLUE : null); }
+  function trapOwner(r, c) {
+    if ((r === 0 && (c === 2 || c === 4)) || (r === 1 && c === 3)) { return RED; }
+    if ((r === 8 && (c === 2 || c === 4)) || (r === 7 && c === 3)) { return BLUE; }
+    return null;
+  }
+
+  function emptyBoard() {
+    var b = [], r, c;
+    for (r = 0; r < ROWS; r++) { b.push([]); for (c = 0; c < COLS; c++) { b[r].push(null); } }
+    return b;
+  }
+
+  // 标准开局：两方中心对称。红方从自己视角看，左角虎、右角狮，前排左象右鼠。
+  function initialBoard() {
+    var b = emptyBoard();
+    var red = [[0, 0, 6], [0, 6, 7], [1, 1, 2], [1, 5, 3], [2, 0, 8], [2, 2, 4], [2, 4, 5], [2, 6, 1]];
+    red.forEach(function (x) {
+      b[x[0]][x[1]] = RED + x[2];
+      b[ROWS - 1 - x[0]][COLS - 1 - x[1]] = BLUE + x[2];
+    });
+    return b;
+  }
+
+  function cloneBoard(b) { return b.map(function (row) { return row.slice(); }); }
+
+  /* ---------------- 吃子与走子 ---------------- */
+
+  function canCapture(attacker, fr, fc, defender, tr, tc) {
+    if (isWater(fr, fc) !== isWater(tr, tc)) { return false; }      // 河岸不互吃
+    if (trapOwner(tr, tc) === sideOf(attacker)) { return true; }    // 对方落入我方陷阱
+    var a = rankOf(attacker), d = rankOf(defender);
+    if (a === 1 && d === 8) { return true; }                         // 鼠吃象
+    if (a === 8 && d === 1) { return false; }                        // 象不吃鼠
+    return a >= d;
+  }
+
+  function canEnter(board, fr, fc, tr, tc) {
+    var p = board[fr][fc], side = sideOf(p);
+    if (denOwner(tr, tc) === side) { return false; }
+    var q = board[tr][tc];
+    if (!q) { return true; }
+    if (sideOf(q) === side) { return false; }
+    return canCapture(p, fr, fc, q, tr, tc);
+  }
+
+  function movesFor(board, r, c) {
+    var out = [];
+    if (!onBoard(r, c) || !board || !Array.isArray(board[r])) { return out; }
+    var p = board[r][c];
+    if (!p) { return out; }
+    var rank = rankOf(p);
+    DIRS.forEach(function (d) {
+      var tr = r + d[0], tc = c + d[1];
+      if (!onBoard(tr, tc)) { return; }
+      if (isWater(tr, tc) && rank !== 1) {
+        if (rank !== 6 && rank !== 7) { return; }
+        // 狮虎跳河：沿直线越过整段河，途中不能有任何棋子
+        while (onBoard(tr, tc) && isWater(tr, tc)) {
+          if (board[tr][tc]) { return; }
+          tr += d[0]; tc += d[1];
+        }
+        if (!onBoard(tr, tc)) { return; }
+      }
+      if (canEnter(board, r, c, tr, tc)) { out.push({ fr: r, fc: c, tr: tr, tc: tc }); }
+    });
+    return out;
+  }
+
+  function legalMoves(board, side) {
+    var out = [], r, c;
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        if (board[r][c] && sideOf(board[r][c]) === side) { out = out.concat(movesFor(board, r, c)); }
+      }
+    }
+    return out;
+  }
+
+  function makeMove(board, m) {
+    var captured = board[m.tr][m.tc];
+    board[m.tr][m.tc] = board[m.fr][m.fc];
+    board[m.fr][m.fc] = null;
+    return captured;
+  }
+
+  function unmakeMove(board, m, captured) {
+    board[m.fr][m.fc] = board[m.tr][m.tc];
+    board[m.tr][m.tc] = captured || null;
+  }
+
+  function applyMove(board, m) { var nb = cloneBoard(board); makeMove(nb, m); return nb; }
+
+  /* ---------------- 终局判定 ---------------- */
+
+  // 只看兽穴与棋子数；无子可走另行判断
+  function winnerOf(board) {
+    var inBlueDen = board[8][3], inRedDen = board[0][3];
+    if (inBlueDen && sideOf(inBlueDen) === RED) { return { winner: RED, reason: 'den' }; }
+    if (inRedDen && sideOf(inRedDen) === BLUE) { return { winner: BLUE, reason: 'den' }; }
+    var red = 0, blue = 0, r, c;
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        if (board[r][c]) { if (sideOf(board[r][c]) === RED) { red++; } else { blue++; } }
+      }
+    }
+    if (!red) { return { winner: BLUE, reason: 'captured' }; }
+    if (!blue) { return { winner: RED, reason: 'captured' }; }
+    return null;
+  }
+
+  function gameStatus(board, sideToMove) {
+    var w = winnerOf(board);
+    if (w) { return { over: true, winner: w.winner, reason: w.reason }; }
+    if (!legalMoves(board, sideToMove).length) { return { over: true, winner: opp(sideToMove), reason: 'no-moves' }; }
+    return { over: false, winner: null, reason: null };
+  }
+
+  /* ---------------- 对局状态 + 统一走子入口 ---------------- */
+
+  // 状态对象：联机/单机共用的唯一权威形态。只能由 safeApplyMove 产生新状态，禁止原地修改。
+  function createInitialState() {
+    return { board: initialBoard(), turn: RED, over: false, winner: null, reason: null, version: 0, lastMove: null };
+  }
+
+  function validState(state) {
+    return !!state && (state.turn === RED || state.turn === BLUE) &&
+      Number.isInteger(state.version) && state.version >= 0 &&
+      Array.isArray(state.board) && state.board.length === ROWS &&
+      state.board.every(function (row) {
+        return Array.isArray(row) && row.length === COLS && row.every(function (p) {
+          return p === null || (typeof p === 'string' && /^[rb][1-8]$/.test(p));
+        });
+      });
+  }
+
+  // 返回 { ok: true, state: 新状态 } 或 { ok: false, code: 错误码 }
+  // 错误码：GAME_OVER / BAD_STATE / NOT_YOUR_TURN / BAD_COORDS / NOT_YOUR_PIECE / ILLEGAL_MOVE
+  function safeApplyMove(state, actorSide, move) {
+    if (!state || state.over) { return { ok: false, code: 'GAME_OVER' }; }
+    if (!validState(state)) { return { ok: false, code: 'BAD_STATE' }; }
+    if (actorSide !== state.turn) { return { ok: false, code: 'NOT_YOUR_TURN' }; }
+    if (!move || !onBoard(move.fr, move.fc) || !onBoard(move.tr, move.tc)) { return { ok: false, code: 'BAD_COORDS' }; }
+    var piece = state.board[move.fr][move.fc];
+    if (!piece || sideOf(piece) !== actorSide) { return { ok: false, code: 'NOT_YOUR_PIECE' }; }
+    var legal = movesFor(state.board, move.fr, move.fc).some(function (m) { return m.tr === move.tr && m.tc === move.tc; });
+    if (!legal) { return { ok: false, code: 'ILLEGAL_MOVE' }; }
+    var nb = applyMove(state.board, move);
+    var st = gameStatus(nb, opp(state.turn));
+    return {
+      ok: true,
+      state: {
+        board: nb, turn: opp(state.turn), over: st.over, winner: st.winner, reason: st.reason,
+        version: state.version + 1, lastMove: { fr: move.fr, fc: move.fc, tr: move.tr, tc: move.tc }
+      }
+    };
+  }
+
+  /* ---------------- 电脑对手（α-β 搜索，纯函数） ---------------- */
+
+  function evaluate(board, side) {
+    var score = 0, r, c, p, s, rank, den, dist;
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        p = board[r][c];
+        if (!p) { continue; }
+        s = sideOf(p); rank = rankOf(p);
+        den = s === RED ? { r: 8, c: 3 } : { r: 0, c: 3 };
+        dist = Math.abs(r - den.r) + Math.abs(c - den.c);
+        var v = VALUES[rank] + (14 - dist) * (rank === 1 ? 4 : 8);
+        if (dist === 1) { v += 400; }
+        if (trapOwner(r, c) === opp(s)) { v += 120; }      // 压到对方陷阱，逼近兽穴
+        score += s === side ? v : -v;
+      }
+    }
+    return score;
+  }
+
+  function ordered(board, side) {
+    var moves = legalMoves(board, side);
+    moves.forEach(function (m) {
+      var q = board[m.tr][m.tc];
+      m.k = (denOwner(m.tr, m.tc) === opp(side) ? 100000 : 0) + (q ? VALUES[rankOf(q)] * 10 - rankOf(board[m.fr][m.fc]) : 0);
+    });
+    moves.sort(function (a, b) { return b.k - a.k; });
+    return moves;
+  }
+
+  function negamax(board, side, depth, alpha, beta, ctx, ply) {
+    ctx.nodes++;
+    var w = winnerOf(board);
+    if (w) { return w.winner === side ? WIN - ply : -(WIN - ply); }
+    if (depth === 0 || ctx.nodes > ctx.max) { if (ctx.nodes > ctx.max) { ctx.stop = true; } return evaluate(board, side); }
+    var moves = ordered(board, side);
+    if (!moves.length) { return -(WIN - ply); }
+    var best = -Infinity, i, m, cap, v;
+    for (i = 0; i < moves.length; i++) {
+      m = moves[i];
+      cap = makeMove(board, m);
+      v = -negamax(board, opp(side), depth - 1, -beta, -alpha, ctx, ply + 1);
+      unmakeMove(board, m, cap);
+      if (v > best) { best = v; }
+      if (v > alpha) { alpha = v; }
+      if (alpha >= beta || ctx.stop) { break; }
+    }
+    return best;
+  }
+
+  // options: { depth: 最大搜索层数（默认 4）, maxNodes: 节点上限（默认 60000） }
+  function bestMove(state, side, options) {
+    if (!validState(state) || state.over || state.turn !== side) { return null; }
+    var depthLimit = (options && options.depth) || 4, max = (options && options.maxNodes) || 60000;
+    var board = cloneBoard(state.board), root = ordered(board, side);
+    if (!root.length) { return null; }
+    var best = root[0], ctx = { nodes: 0, max: max, stop: false }, depth, i, m, cap, v, iterBest, iterScore;
+    for (depth = 1; depth <= depthLimit; depth++) {
+      iterBest = null; iterScore = -Infinity;
+      var alpha = -Infinity;
+      for (i = 0; i < root.length; i++) {
+        m = root[i];
+        cap = makeMove(board, m);
+        v = -negamax(board, opp(side), depth - 1, -Infinity, -alpha, ctx, 1);
+        unmakeMove(board, m, cap);
+        if (ctx.stop) { break; }
+        if (v > iterScore) { iterScore = v; iterBest = m; }
+        if (v > alpha) { alpha = v; }
+      }
+      if (ctx.stop) { break; }
+      if (iterBest) {
+        best = iterBest;
+        root.splice(root.indexOf(iterBest), 1); root.unshift(iterBest);   // 上一层最好的先搜
+        if (iterScore >= WIN - 100) { break; }                              // 已找到必胜
+      }
+    }
+    return { fr: best.fr, fc: best.fc, tr: best.tr, tc: best.tc };
+  }
+
+  var DSQ = {
+    RED: RED, BLUE: BLUE, ROWS: ROWS, COLS: COLS,
+    NAMES: NAMES, EMOJI: EMOJI, VALUES: VALUES,
+    sideOf: sideOf, rankOf: rankOf, opp: opp, onBoard: onBoard,
+    isWater: isWater, denOwner: denOwner, trapOwner: trapOwner,
+    emptyBoard: emptyBoard, initialBoard: initialBoard, cloneBoard: cloneBoard,
+    canCapture: canCapture, movesFor: movesFor, legalMoves: legalMoves,
+    makeMove: makeMove, unmakeMove: unmakeMove, applyMove: applyMove,
+    winnerOf: winnerOf, gameStatus: gameStatus,
+    createInitialState: createInitialState, safeApplyMove: safeApplyMove,
+    evaluate: evaluate, bestMove: bestMove
+  };
+
+  if (typeof module !== 'undefined' && module.exports) { module.exports = DSQ; }
+  root.DSQ = DSQ;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+(function(){
+  'use strict';
+  var E=window.DSQ,mode=new URLSearchParams(window.location.search).get('mode')||'ai';
+  if(['ai','local','online'].indexOf(mode)<0)mode='ai';
+  var boardEl=document.getElementById('board'),status=document.getElementById('status'),counts=document.getElementById('counts');
+  var resultEl=document.getElementById('result'),resultTitle=document.getElementById('resultTitle'),resultText=document.getElementById('resultText'),confetti=document.getElementById('confetti');
+  var state=E.createInitialState(),history=[],selected=null,targets=[],thinking=false,pending=false,side=null,ready=false,roomCode=null;
+  var epoch=0,timer=null,watchdog=null,worker=null,orientation=null,shownResult=null,cells=[];
+  var SIDE={r:'红方',b:'蓝方'},COLS='ABCDEFG';
+
+  function parentMessage(type,data){window.parent.postMessage({channel:'boardgame:dou-shou-qi',type:type,data:data},window.location.origin);}
+  function canPlay(){return !state.over&&!thinking&&!pending&&(mode==='local'||(mode==='ai'&&state.turn===E.RED)||(mode==='online'&&ready&&state.turn===side));}
+  function viewSide(){return mode==='online'&&side===E.BLUE?E.BLUE:E.RED;}
+  function squareName(r,c){return COLS.charAt(c)+(r+1);}
+  function pieceName(p){return SIDE[E.sideOf(p)]+E.NAMES[E.rankOf(p)];}
+
+  // 系统没有彩色 emoji 字体时改显汉字，避免方框
+  function detectEmoji(){
+    try{
+      var canvas=document.createElement('canvas'),ctx=canvas.getContext&&canvas.getContext('2d');
+      if(!ctx)return true;canvas.width=canvas.height=24;ctx.textBaseline='top';ctx.font='20px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';ctx.fillText('\uD83D\uDC18',0,0);
+      var d=ctx.getImageData(0,0,24,24).data;
+      for(var i=0;i<d.length;i+=4)if(d[i+3]>0&&(Math.abs(d[i]-d[i+1])>24||Math.abs(d[i+1]-d[i+2])>24))return true;
+      return false;
+    }catch(error){return true;}
+  }
+  var emoji=detectEmoji();boardEl.classList.toggle('no-emoji',!emoji);
+
+  for(var r=0;r<E.ROWS;r++){
+    cells[r]=[];
+    for(var c=0;c<E.COLS;c++)(function(r,c){
+      var cell=document.createElement('button'),face=document.createElement('span'),rank=document.createElement('span');
+      cell.setAttribute('type','button');face.className='face';rank.className='rank';
+      cell.appendChild(face);cell.appendChild(rank);cell.face=face;cell.rank=rank;
+      cell.addEventListener('click',function(){onCell(r,c);});
+      cells[r][c]=cell;
+    })(r,c);
+  }
+  function orient(){
+    var view=viewSide();if(orientation===view)return;orientation=view;
+    for(var i=0;i<E.ROWS;i++)for(var j=0;j<E.COLS;j++){
+      var r=view===E.RED?E.ROWS-1-i:i,c=view===E.RED?j:E.COLS-1-j;boardEl.appendChild(cells[r][c]);
+    }
+  }
+  function terrain(r,c){
+    var t=['cell'];if(E.isWater(r,c))t.push('water');
+    var trap=E.trapOwner(r,c),den=E.denOwner(r,c);if(trap)t.push('trap','trap-'+trap);if(den)t.push('den','den-'+den);
+    return t;
+  }
+  function isTarget(r,c){for(var i=0;i<targets.length;i++)if(targets[i].tr===r&&targets[i].tc===c)return true;return false;}
+  function render(){
+    orient();var last=state.lastMove,red=0,blue=0,active=canPlay();
+    for(var r=0;r<E.ROWS;r++)for(var c=0;c<E.COLS;c++){
+      var p=state.board[r][c],cell=cells[r][c],cls=terrain(r,c),label=squareName(r,c);
+      if(p){cls.push('has-piece','piece-'+E.sideOf(p));if(E.sideOf(p)===E.RED)red++;else blue++;
+        cell.face.textContent=emoji?E.EMOJI[E.rankOf(p)]:E.NAMES[E.rankOf(p)];cell.rank.textContent=String(E.rankOf(p));label+='，'+pieceName(p);}
+      else{cell.face.textContent='';cell.rank.textContent='';label+=E.isWater(r,c)?'，河':E.denOwner(r,c)?'，'+SIDE[E.denOwner(r,c)]+'兽穴':E.trapOwner(r,c)?'，'+SIDE[E.trapOwner(r,c)]+'陷阱':'，空地';}
+      if(selected&&selected.r===r&&selected.c===c)cls.push('selected');
+      if(isTarget(r,c))cls.push(p?'capture':'target');
+      if(last&&((last.fr===r&&last.fc===c)||(last.tr===r&&last.tc===c)))cls.push('last');
+      if(active&&p&&E.sideOf(p)===state.turn)cls.push('movable');
+      cell.className=cls.join(' ');cell.setAttribute('aria-label',label);
+      cell.setAttribute('aria-pressed',selected&&selected.r===r&&selected.c===c?'true':'false');
+    }
+    var text;
+    if(state.over)text=resultLine();
+    else if(mode==='online'&&!ready)text=roomCode?'等待好友加入':'等待房间同步…';
+    else if(thinking)text='电脑思考中…';
+    else if(pending)text='等待服务器确认…';
+    else text=SIDE[state.turn]+'行棋'+(mode==='online'?(state.turn===side?' · 轮到你':' · 等待对方'):mode==='ai'&&state.turn===E.RED?' · 轮到你':'');
+    status.textContent=text;status.classList.toggle('over',state.over);
+    counts.textContent='红方 '+red+' 子 · 蓝方 '+blue+' 子';
+    document.getElementById('undo').disabled=!history.length||mode==='online';
+    showResult();
+  }
+  function resultLine(){
+    if(state.reason==='cancelled')return '房间已取消';
+    if(!state.winner)return '对局结束';
+    var why={den:'攻入兽穴',captured:'吃光对方棋子','no-moves':'对方无子可走',resign:'对方认输'}[state.reason]||'';
+    return SIDE[state.winner]+'获胜'+(why?' · '+why:'');
+  }
+  function showResult(){
+    if(!state.over||state.reason==='cancelled'){resultEl.hidden=true;confetti.classList.toggle('show',false);return;}
+    if(shownResult===state.version)return;shownResult=state.version;
+    var mine=mode==='local'||(mode==='ai'&&state.winner===E.RED)||(mode==='online'&&state.winner===side);
+    resultTitle.textContent=mode==='local'?SIDE[state.winner]+'获胜！':mine?'你赢了！':'这局输了';
+    resultText.textContent=resultLine()+(mine||mode==='local'?'':' · 再来一局，换个思路。');
+    resultEl.hidden=false;
+    if(mine){
+      if(!confetti.filled){for(var i=0;i<36;i++){var bit=document.createElement('i');bit.setAttribute('style','left:'+((i*37)%100)+'%;animation-delay:'+((i%9)*0.12).toFixed(2)+'s');confetti.appendChild(bit);}confetti.filled=true;}
+      confetti.classList.toggle('show',true);
+    }
+  }
+  function stopAI(){epoch++;clearTimeout(timer);clearTimeout(watchdog);if(worker)worker.terminate();worker=null;timer=null;watchdog=null;thinking=false;}
+  function commit(move){
+    var mover=state.board[move.fr][move.fc],captured=state.board[move.tr][move.tc],turn=state.turn;
+    var result=E.safeApplyMove(state,turn,move);if(!result.ok)return false;
+    history.push({move:move,mover:mover,captured:captured,turnBefore:turn});state=result.state;selected=null;targets=[];render();return true;
+  }
+  function scheduleAI(){
+    if(mode!=='ai'||state.over||state.turn!==E.BLUE)return;
+    thinking=true;var id=++epoch,version=state.version;render();
+    function current(){return id===epoch&&state.version===version&&!state.over&&state.turn===E.BLUE;}
+    function finish(move){
+      if(!current())return;
+      clearTimeout(watchdog);if(worker)worker.terminate();worker=null;thinking=false;
+      if(!move||!commit(move)){var fallback=E.bestMove(state,E.BLUE,{depth:4});if(fallback)commit(fallback);else render();}
+    }
+    function fallback(){if(current())finish(E.bestMove(state,E.BLUE,{depth:4}));}
+    timer=setTimeout(function(){
+      if(!current())return;
+      try{
+        if(typeof window.Worker!=='function'){fallback();return;}
+        worker=new window.Worker('ai-worker.js?v=1');
+        worker.onmessage=function(e){if(e.data.id!==id)return;if(e.data.error)fallback();else if(e.data.version===version)finish(e.data.move);};
+        worker.onerror=function(e){if(e.preventDefault)e.preventDefault();fallback();};worker.onmessageerror=fallback;
+        watchdog=setTimeout(fallback,4000);worker.postMessage({id:id,state:state});
+      }catch(error){fallback();}
+    },150);
+  }
+  function play(move){
+    if(!canPlay())return false;
+    if(mode==='online'){
+      if(!E.safeApplyMove(state,side,move).ok)return false;
+      pending=true;selected=null;targets=[];parentMessage('move',{move:move,expectedVersion:state.version});render();return true;
+    }
+    if(commit(move)){scheduleAI();return true;}
+    return false;
+  }
+  function onCell(r,c){
+    if(!canPlay())return;
+    if(selected&&isTarget(r,c)){play({fr:selected.r,fc:selected.c,tr:r,tc:c});return;}
+    var p=state.board[r][c];
+    if(p&&E.sideOf(p)===state.turn&&!(selected&&selected.r===r&&selected.c===c)){selected={r:r,c:c};targets=E.movesFor(state.board,r,c);}
+    else{selected=null;targets=[];}
+    render();
+  }
+  function reset(){if(mode==='online')return;stopAI();state=E.createInitialState();history=[];selected=null;targets=[];pending=false;shownResult=null;render();}
+  function undo(){
+    if(mode==='online'||!history.length)return;stopAI();
+    var steps=mode==='local'?1:state.turn===E.BLUE?1:2;
+    history=history.slice(0,Math.max(0,history.length-steps));state=E.createInitialState();
+    for(var i=0;i<history.length;i++)state=E.safeApplyMove(state,state.turn,history[i].move).state;
+    selected=null;targets=[];shownResult=null;render();
+  }
+  document.getElementById('newGame').addEventListener('click',reset);document.getElementById('undo').addEventListener('click',undo);
+  document.getElementById('resultClose').addEventListener('click',function(){resultEl.hidden=true;confetti.classList.toggle('show',false);});
+  document.getElementById('modeLabel').textContent=mode==='ai'?'人机对战 · 你执红先行':mode==='local'?'本地双人 · 红蓝轮流':'好友同玩';
+  if(mode==='online'){
+    document.getElementById('newGame').hidden=true;document.getElementById('undo').hidden=true;
+    window.addEventListener('message',function(event){
+      if(event.source!==window.parent||event.origin!==window.location.origin||!event.data||event.data.channel!=='boardgame:dou-shou-qi:control')return;
+      var room=event.data.room;if(!room||!room.state||!Array.isArray(room.history))return;
+      if(roomCode===room.code&&state.version>room.state.version)return;
+      if(roomCode===room.code&&state.version===room.state.version&&!pending&&ready===(room.status==='playing'))return;
+      if(state.version!==room.state.version){selected=null;targets=[];}
+      roomCode=room.code;side=room.yourSide;ready=room.status==='playing';state=room.state;history=room.history;pending=false;render();
+    });
+    parentMessage('ready',{});
+  }
+  window.addEventListener('pagehide',stopAI);render();boardEl.setAttribute('data-ready','true');
+  if(window.__DSQ_TEST_MODE__)window.__DSQ_TEST__={getState:function(){return state;},getHistory:function(){return history;},getSelected:function(){return selected;},getTargets:function(){return targets;},play:play,click:onCell,reset:reset,undo:undo,cells:cells,load:function(next){stopAI();state=next;history=[];selected=null;targets=[];pending=false;shownResult=null;render();}};
+})();
+</script></body></html>

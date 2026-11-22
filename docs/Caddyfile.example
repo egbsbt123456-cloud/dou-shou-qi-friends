@@ -1,0 +1,11 @@
+animal.example.com {
+  encode zstd gzip
+  handle /api/* {
+    reverse_proxy 127.0.0.1:3009
+  }
+  handle {
+    root * /srv/dou-shou-qi-friends/apps/web/dist
+    try_files {path} /index.html
+    file_server
+  }
+}

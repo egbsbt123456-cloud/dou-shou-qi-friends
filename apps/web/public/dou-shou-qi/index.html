@@ -1,0 +1,82 @@
+<!doctype html>
+<!-- 斗兽棋棋盘：平台原创实现。视觉思路参考 elye/web_dynamic_nodejs_animal_chess_game（河流渐变、彩边陷阱、金光兽穴），未复制其代码或素材。 -->
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>斗兽棋</title><style>
+html{font-family:Inter,"Microsoft YaHei",sans-serif;font-synthesis:none}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#f8f7f2;color:#223b34;display:flex;flex-direction:column}
+button{font:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid #d29f41;outline-offset:3px}
+button[hidden],[hidden]{display:none!important}
+.play-header{min-height:58px;display:flex;gap:12px;padding:12px 20px;justify-content:space-between;align-items:center;flex-wrap:wrap;border-bottom:1px solid #e2e4dc}
+#modeLabel{font-size:13px;color:#69786d}
+.controls{display:flex;gap:8px}
+.plain-btn{border:1px solid #bcc9bd;border-radius:5px;background:#f8faf5;color:#264f40;padding:9px 12px;font-size:13px}
+.plain-btn:hover{background:#eef1e7}.plain-btn:disabled{opacity:.5;cursor:default}
+.board-wrap{padding:18px 12px 8px;display:flex;justify-content:center}
+
+/* ---- 棋盘：9 行 × 7 列 ---- */
+#board{--cell:min(calc((100vw - 40px) / 7),calc((100vh - 230px) / 9),74px);
+  display:grid;grid-template-columns:repeat(7,var(--cell));grid-template-rows:repeat(9,var(--cell));gap:3px;padding:10px;
+  background:linear-gradient(160deg,#b98d5c,#9c7244);border-radius:14px;
+  box-shadow:0 12px 22px #74542e26,0 2px 3px #74542e1c,inset 0 0 0 1px #fff6;touch-action:manipulation;user-select:none}
+.cell{position:relative;padding:0;border:0;border-radius:6px;background:radial-gradient(circle at 35% 30%,#f6e8c4,#e9d3a2);
+  display:grid;place-items:center;overflow:visible;color:inherit}
+.cell.water{background:linear-gradient(135deg,#a9d6ec,#5e9cc5);
+  background-image:repeating-linear-gradient(170deg,#ffffff00 0 9px,#ffffff2e 9px 11px),linear-gradient(135deg,#a9d6ec,#5e9cc5)}
+.cell.trap{box-shadow:inset 0 0 0 3px var(--trap)}
+.cell.trap::before{content:'';position:absolute;inset:22%;border-radius:50%;border:2px dashed var(--trap);opacity:.55}
+.trap-r{--trap:#d9826f}.trap-b{--trap:#6f9fd6}
+.cell.den{background:radial-gradient(circle,#fffbea,#f1d98d);box-shadow:inset 0 0 0 4px var(--den),0 0 14px #ffd54a99}
+.cell.den::before{content:'🏰';position:absolute;font-size:calc(var(--cell)*.48);opacity:.35;font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif}
+.cell.den::after{content:'';position:absolute;inset:-3px;border-radius:8px;border:2px solid #ffd54a;animation:shimmer 2.4s ease-in-out infinite}
+.den-r{--den:#cf6b57}.den-b{--den:#5b8fcf}
+@keyframes shimmer{0%,100%{opacity:.25}50%{opacity:.9}}
+
+/* ---- 棋子 ---- */
+.face{position:relative;z-index:2;display:grid;place-items:center;width:84%;height:84%;border-radius:50%;
+  font-size:calc(var(--cell)*.5);line-height:1;font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;transition:transform .15s}
+.face:empty{display:none}
+.piece-r .face{background:radial-gradient(circle at 35% 30%,#fff0ec,#ec9b8b);border:3px solid #b9473a;color:#8a2418;box-shadow:0 3px 0 #9a3b30,0 4px 6px #5b1d1640}
+.piece-b .face{background:radial-gradient(circle at 35% 30%,#eef6ff,#8dbbea);border:3px solid #3b6fae;color:#163e73;box-shadow:0 3px 0 #2f5a8e,0 4px 6px #12305940}
+.no-emoji .face{font-family:"KaiTi","STKaiti",serif;font-weight:700;font-size:calc(var(--cell)*.42)}
+.rank{position:absolute;z-index:3;right:5%;bottom:5%;min-width:calc(var(--cell)*.3);height:calc(var(--cell)*.3);padding:0 3px;border-radius:999px;
+  display:grid;place-items:center;font:700 calc(var(--cell)*.19)/1 Inter,sans-serif;background:#fffdf6;border:1px solid #c9b88f;color:#5b4524}
+.rank:empty{display:none}
+.movable:hover .face{transform:scale(1.08)}
+.selected .face{transform:scale(1.1);box-shadow:0 0 0 3px #ffd54a,0 0 16px #ffc800aa}
+.cell.last{outline:2px solid #bc5e48cc;outline-offset:-2px}
+.cell.target::after{content:'';position:absolute;z-index:4;width:24%;height:24%;border-radius:50%;background:#fffdf6;box-shadow:0 0 0 3px #4b8064cc}
+.cell.capture::after{content:'';position:absolute;z-index:4;inset:5%;border-radius:50%;border:3px solid #c2452f;box-shadow:0 0 10px #c2452f88}
+.cell.den.target::after,.cell.den.capture::after{animation:none}
+
+.game-status{text-align:center;margin:10px 14px 2px;color:#496047;font-size:14px;font-weight:650}
+.game-status.over{color:#926741}
+.counts{text-align:center;margin:2px;color:#808570;font-size:12px}
+details.rules{max-width:520px;margin:10px auto 22px;padding:0 16px;color:#69786d;font-size:12px;line-height:1.9}
+details.rules summary{cursor:pointer;color:#264f40;text-align:center;font-size:13px}
+
+/* ---- 结算与彩带 ---- */
+.result{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:#223b3459}
+.result>div{min-width:min(320px,86vw);padding:28px 26px;text-align:center;background:#fffefa;border:1px solid #e0e3d9;border-radius:12px;box-shadow:0 18px 40px #223b3433}
+.result h2{margin:0 0 10px;font-size:26px}.result p{margin:0 0 20px;color:#69786d}
+#confetti{position:fixed;inset:0;z-index:30;pointer-events:none;overflow:hidden;display:none}
+#confetti.show{display:block}
+#confetti i{position:absolute;top:-16px;width:9px;height:14px;border-radius:2px;background:#e98f80;animation:fall 2.6s linear forwards}
+#confetti i:nth-child(4n+1){background:#8dbbea}#confetti i:nth-child(4n+2){background:#ffd54a}#confetti i:nth-child(4n+3){background:#4b8064}
+@keyframes fall{to{transform:translateY(110vh) rotate(540deg);opacity:.2}}
+@media(prefers-reduced-motion:reduce){.cell.den::after,#confetti i{animation:none}#confetti{display:none!important}.face{transition:none}}
+@media(max-width:600px){.play-header{padding:10px 12px;gap:8px}.plain-btn{font-size:12px;padding:7px 10px}.board-wrap{padding:12px 6px 6px}#board{gap:2px;padding:6px;--cell:min(calc((100vw - 30px) / 7),calc((100vh - 200px) / 9),74px)}}
+</style></head><body>
+<header class="play-header"><span id="modeLabel">斗兽棋</span><div class="controls"><button id="newGame" class="plain-btn" type="button">重新开局</button><button id="undo" class="plain-btn" type="button">悔棋</button></div></header>
+<div class="board-wrap"><div id="board" role="group" aria-label="斗兽棋棋盘，9 行 7 列"></div></div>
+<p id="status" class="game-status" role="status">红方先行</p>
+<p id="counts" class="counts"></p>
+<details class="rules"><summary>规则说明</summary>
+ <p>兽力由大到小：象 8、狮 7、虎 6、豹 5、狼 4、狗 3、猫 2、鼠 1。每步横竖走一格，兽力大于或等于对方即可吃；鼠能吃象，象不能吃鼠。</p>
+ <p>只有鼠能下河；河里和岸上的棋子不能互吃。狮、虎可以横竖跳过整段河，河中有棋子时不能跳。</p>
+ <p>棋子走进对方陷阱后，任何对方棋子都能吃它。不能进入自己的兽穴。</p>
+ <p>走进对方兽穴、吃光对方棋子，或让对方无子可走，即获胜。</p>
+</details>
+<div id="result" class="result" hidden><div><h2 id="resultTitle"></h2><p id="resultText"></p><button id="resultClose" class="plain-btn" type="button">查看棋盘</button></div></div>
+<div id="confetti" aria-hidden="true"></div>
+<script src="engine.js?v=1"></script><script src="app.js?v=1"></script></body></html>
